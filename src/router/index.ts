@@ -2,20 +2,24 @@ import { createRouter, createWebHashHistory } from 'vue-router'
 
 import PokemonListView from '../views/pokemon/PokemonListView.vue'
 import PokemonDetailsView from '../views/pokemon/PokemonDetailsView.vue'
-import FavouritePokemonView from '../views/pokemon/FavouritePokemonView.vue'
+import FavouritePokemonList from '@/views/pokemon/FavouritePokemonList.vue'
 
 const routes = [
   {
     path: '/',
-    component: PokemonListView
+    component: PokemonListView,
+    name: 'PokemonListView'
+  },
+  {
+    path: '/favourite-pokemons',
+    component: FavouritePokemonList,
+    name: 'FavouritePokemonList'
   },
   {
     path: '/pokemons/:id',
     component: PokemonDetailsView,
-  },
-  {
-    path: '/favourite-pokemons',
-    component: FavouritePokemonView,
+    props: true,
+    name: 'PokemonDetailsView'
   },
   { 
     path: '/:notFound(.*)', 

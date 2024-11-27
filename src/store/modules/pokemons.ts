@@ -1,31 +1,47 @@
+import { ActionTree, ActionContext } from 'vuex';
+import axios from 'axios';
 import { Query } from '@/models/query';
 import { Pokemon } from '@/models/pokemon'
+
+const GET_POKEMON_API_URL='https://pokeapi.co/api/v2/pokemon'
+const GET_POKEMON_ABILITIES_API_URL='https://pokeapi.co/api/v2/ability'
 
 export default {
   namespaced: true,
   state() {
     return {
+      favouritePokemonIdList: [] as Number[],
       pokemonList: [] as Pokemon[],
-      quantity: Number
+      query: {} as Query
     };
   },
   
   // pre: load pokemon list
   getters: {
-    pokemonList(state: { pokemonList: any; }) {
-      return state.pokemonList;
+    async getPokemonList({ commit, dispatch, getters, state }: ActionContext<any, any>) {
+      if (state.pokemonList == null)
+        await dispatch('loadPokemonList')
+      
+      return state.pokemonList
     },
-    quantity(state: { quantity: any; }) {
-      return state.quantity;
-    }
   },
-  
+
   actions: {
+    // get pokemon id from backend and add to state
+    async loadFavouritePokemonIdList({ commit, dispatch, getters, state }: ActionContext<any, any>) {
+      const storedList = localStorage.getItem('favouritePokemonIdList');
+      commit('setFavouritePokemonIdList', storedList ? JSON.parse(storedList) : []);     
+    },
+
+    // pre: loadFavouritePokemonList
     // get pokemon list with pagination, sorting, filtering, search from api and set state
-    async loadPokemonList(context: any, query: Query) {
+    async loadPokemonList({ commit, dispatch, getters, state }: ActionContext<any, any>, payload: { query: Query }) {
+      if (state.favouritePokemonIdList == null || state.favouritePokemonIdList.length == 0)
+        await dispatch('loadFavouritePokemonIdList')
+
+      const { query } = payload;
+
       let queryString = '';
-      const defaultOrderBy = "asc";
-      let pokemonList = [];
 
       // exact search, single result
       if (query.pokemonIdOrName)
@@ -33,24 +49,31 @@ export default {
       
       // multiple results
       else {
-        queryString += `?orderBy=id ${query.orderBy || defaultOrderBy}&`
+        queryString += '?';
 
+        // todo
+        // if (query.orderBy)
+        //   queryString += `orderBy=id ${query.orderBy}&`
         if (query.pageNumber)
-          queryString += `pageNumber=${query.pageNumber}&`;
+          queryString += `offset=${query.pageNumber}&`;
         if (query.pageSize)
-          queryString += `pageSize=${query.pageSize}&`;
-        if (query.pokemonGender)
-          queryString += `gender=${query.pokemonGender}&`;
+          queryString += `limit=${query.pageSize}&`;
+        // if (query.pokemonGender)
+        //   queryString += `gender=${query.pokemonGender}&`;
 
         queryString = queryString.slice(0, -1); // remove last '&'
       }
       
       try {
         const response = await fetch(
-          process.env.GET_POKEMON_API_URL + queryString, 
+          GET_POKEMON_API_URL + queryString, 
           {
             method: 'GET',
-            headers: {'Content-Type': 'application/json' },
+            headers: {'Content-Type': 'application/json',
+              'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Accept, Accept-Language, Accept-Encoding',
+             },
           }
         );
         
@@ -60,30 +83,69 @@ export default {
           throw new Error(responseData.message); 
         } 
 
-        const promises = responseData.results.array.forEach(async (result: any) => {
-          const pokemon = await this.loadPokemon(result.url)
-          if (pokemon != null)
-            pokemonList.push(pokemon);  
+        const promises = responseData.results.map(async (result: any) => {
+          const pokemon = await dispatch('loadBasicPokemonInfo', { url: result.url });
+          return pokemon;
         });
-      
-        pokemonList = await Promise.all(promises);
+        
+        let pokemonList = [];
+        
+        if (query.isMyFavourite)
+          pokemonList = (await Promise.all(promises)).filter(pokemon => pokemon.favouritePokemonId != -1);
+        else  
+          pokemonList = (await Promise.all(promises)).filter(pokemon => pokemon != null);
 
-        context.commit('setPokemonList', pokemonList);
-        context.commit('setPokemonQuantity', responseData.count);
-
+        commit('setPokemonList', pokemonList);
+        commit('setQuery', query);
+        return pokemonList;
       } catch (error) {
         console.error("Error during load pokemon:", error);
       }
     },
 
+    // pre: loadFavouritePokemonIdList
+    // get pokemon list with pagination, sorting, filtering, search from api and set state
+    async loadFavouritePokemonList({ commit, dispatch, getters, state }: ActionContext<any, any>) {
+      if (state.favouritePokemonIdList == null || state.favouritePokemonIdList.length == 0)
+        await dispatch('loadFavouritePokemonIdList')
+
+      try {
+        const promises = state.favouritePokemonIdList.map(async (pokemonId: Number) => {
+          if (pokemonId != null) {
+            const pokemon = await dispatch('loadBasicPokemonInfo', { url: GET_POKEMON_API_URL + '/' + pokemonId });
+            return pokemon;
+          }
+          
+        });
+        
+        const pokemonList = ((await Promise.all(promises)).filter(p => p!=null))
+        
+        commit('setPokemonList', pokemonList);
+        
+        return pokemonList;
+      } catch (error) {
+        console.error("Error during load pokemon:", error);
+      }
+    },
+
+    // pre: loadFavouritePokemonList
     // get pokemon basic info
-    async loadPokemon(url: any) {
+    async loadBasicPokemonInfo({ commit, dispatch, getters, state }: ActionContext<any, any>, payload: { url: any }) {
+      if (state.favouritePokemonIdList == null)
+        await dispatch('loadFavouritePokemonIdList')
+      
+      const { url } = payload;
+
       try {
         const response = await fetch(
           url, 
           {
             method: 'GET',
-            headers: {'Content-Type': 'application/json' },
+            headers: {'Content-Type': 'application/json',
+              'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Accept, Accept-Language, Accept-Encoding',
+             },
           }
         );
         const responseData = await response.json();
@@ -95,7 +157,8 @@ export default {
           id: responseData.id,
           picture: responseData.sprites.other.dream_world.front_default,
           name: responseData.name,
-          gender: responseData.gender,
+          gender: responseData.sprites.back_female?.length == 0 ? 'Male' : 'Female',
+          favouritePokemonId: state.favouritePokemonIdList.indexOf(responseData.id)
         };
       
         return pokemon;
@@ -105,14 +168,24 @@ export default {
       }
     },
 
+    // pre: loadFavouritePokemonList
     // get pokemon details by id from api
-    async loadPokemonDetails(pokemonId: any) {
+    async loadPokemonDetails({ commit, dispatch, getters, state }: ActionContext<any, any>, payload: { pokemonId: number }) {
+      if (state.favouritePokemonIdList == null)
+        await dispatch('loadFavouritePokemonIdList')
+
+      const { pokemonId } = payload;
+
       try {
         const response = await fetch(
-          process.env.GET_POKEMON_API_URL + `/${pokemonId}`, 
+          GET_POKEMON_API_URL + `/${pokemonId}`, 
           {
             method: 'GET',
-            headers: {'Content-Type': 'application/json' },
+            headers: {'Content-Type': 'application/json',
+              'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Accept, Accept-Language, Accept-Encoding',
+             },
           }
         );
         const responseData = await response.json();
@@ -124,24 +197,27 @@ export default {
           id: responseData.id,
           picture: responseData.sprites.other.dream_world.front_default,
           name: responseData.name,
-          gender: responseData.gender,
+          gender: responseData.sprites.back_female?.length == 0 ? 'Male' : 'Female',
+          favouritePokemonId: state.favouritePokemonIdList.indexOf(responseData.id),
 
           height: responseData.height,
           weight: responseData.weight,
+          abilities: [],
+          types: [],
         };
 
         // abilities
-        responseData.abilities.array.forEach((ability: any) => {
-          pokemon.abilities?.push(ability.abilitiy.name)
+        responseData.abilities.map((ability: any) => {
+          pokemon.abilities?.push(ability.ability.name)
         });
 
         // types
-        responseData.types.array.forEach((type: any) => {
+        responseData.types.map((type: any) => {
           pokemon.types?.push(type.type.name)
         });
 
         // stats details
-        responseData.stats.array.forEach((stat: any) => {
+        responseData.stats.map((stat: any) => {
           switch (stat.stat.name) {
             case 'hp': 
               pokemon.hp = stat.base_stat
@@ -177,18 +253,23 @@ export default {
 
       } catch (error) {
         console.error("Error during load pokemon details:", error);
+        return null;
       }
     },
 
-    async loadAbilityDescription(abilityName: any) {
-      let description = "";
-      
+    async loadAbilityDescription({ commit, dispatch, getters, state }: ActionContext<any, any>, payload: { abilityName: any }) {
+      const { abilityName } = payload;
+
       try {
         const response = await fetch(
-          process.env.GET_POKEMON_ABILITIES_API_URL + `/${abilityName}`, 
+          GET_POKEMON_ABILITIES_API_URL + `/${abilityName}`, 
           {
             method: 'GET',
-            headers: {'Content-Type': 'application/json' },
+            headers: {'Content-Type': 'application/json',
+              'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Accept, Accept-Language, Accept-Encoding',
+             },
           }
         );
         const responseData = await response.json();
@@ -196,26 +277,72 @@ export default {
           throw new Error(responseData.message); 
         } 
 
-        responseData.effect_entries.array.forEach((effect: any) => {
-          switch (effect.language.name) {
-            case 'en': 
-              description = effect.effect;
-              break;
-          }
-        });
+        const effect = responseData.effect_entries.find(
+          (effect: any) => effect.language.name === 'en'
+        );
+        const description = effect ? effect.effect : '';
 
         return description;
 
       } catch (error) {
-        console.error("Error during load pokemon details:", error);
+        console.error("Error during load ability description:", error);
+      }
+    },
+
+    // add/remove pokemon id to backend
+    async toggleFavourite({ commit, dispatch, getters, state }: ActionContext<any, any>, payload: { pokemonId: number }) {
+      const { pokemonId } = payload;
+      
+        let dataToSend;
+
+        if (state.favouritePokemonIdList.indexOf(pokemonId) == -1) {
+          // add to favourite
+          dataToSend = [...state.favouritePokemonIdList, pokemonId];
+        } else {
+          // remove from favourite
+          dataToSend =  state.favouritePokemonIdList.filter((p: Number) => p != pokemonId)
+        }
+        localStorage.setItem('favouritePokemonIdList', JSON.stringify(dataToSend));    
+        await dispatch('loadFavouritePokemonIdList');
+
+        if (window.location.pathname == '/favourite-pokemons') {
+          await dispatch('loadFavouritePokemonList')
+          return;
+        } else {
+          await dispatch('loadPokemonList', state.query)
+        }
+    },
+
+    async sharePage({ commit, dispatch, getters, state }: ActionContext<any, any>, payload: { pokemonId: string }) {
+      const { pokemonId } = payload;
+      if (navigator.share) {
+        try {
+          await navigator.share({
+            title: document.title,
+            text: 'Check out this pokemon!',
+            url: window.location.hostname + "/pokemons/" + pokemonId,
+          });
+        } catch (error) {
+          console.error('Error sharing:', error);
+        }
+      } else {
+        alert('Web Share API is not supported in your browser.');
       }
     }
   },
 
   mutations: {
-    setPokemonList(state: { pokemonList: any; quantity: any; }, payload: { pokemonList: any; count: any; }) {
-      state.pokemonList = payload.pokemonList;
-      state.quantity = payload.count;
+    setPokemonList(state: { pokemonList: any; quantity: any; }, pokemonList: any) {
+      state.pokemonList = pokemonList;
+    },
+
+    // add all pokemon id to state
+    setFavouritePokemonIdList(state: { favouritePokemonIdList: any; }, pokemonIdList: any) {
+      state.favouritePokemonIdList = pokemonIdList;
+    },
+
+    setQuery(state: { query: Query; }, query: Query) {
+      state.query = query
     }
   },
 };

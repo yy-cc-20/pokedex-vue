@@ -3,6 +3,7 @@ export interface Pokemon {
   picture: string
   name: string;
   gender: string;
+  favouritePokemonId: number;
 
   // details
   types?: string[]
