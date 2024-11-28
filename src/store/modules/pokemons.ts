@@ -12,7 +12,14 @@ export default {
     return {
       favouritePokemonIdList: [] as Number[],
       pokemonList: [] as Pokemon[],
-      query: {} as Query
+      query: {
+        pokemonIdOrName: '',
+    orderBy: '',
+    pageNumber: '',
+    pageSize: '',
+    pokemonGender: '',
+    isMyFavourite: ''
+      }
     };
   },
   
@@ -44,7 +51,7 @@ export default {
       let queryString = '';
 
       // exact search, single result
-      if (query.pokemonIdOrName)
+      if (query?.pokemonIdOrName && query.pokemonIdOrName != null)
         queryString += `/${query.pokemonIdOrName}`
       
       // multiple results
@@ -54,9 +61,9 @@ export default {
         // todo
         // if (query.orderBy)
         //   queryString += `orderBy=id ${query.orderBy}&`
-        if (query.pageNumber)
+        if (query?.pageNumber && query.pageNumber != null)
           queryString += `offset=${query.pageNumber}&`;
-        if (query.pageSize)
+        if (query?.pageSize && query.pageSize != null)
           queryString += `limit=${query.pageSize}&`;
         // if (query.pokemonGender)
         //   queryString += `gender=${query.pokemonGender}&`;
@@ -90,13 +97,14 @@ export default {
         
         let pokemonList = [];
         
-        if (query.isMyFavourite)
+        if (query?.isMyFavourite)
           pokemonList = (await Promise.all(promises)).filter(pokemon => pokemon.favouritePokemonId != -1);
         else  
           pokemonList = (await Promise.all(promises)).filter(pokemon => pokemon != null);
 
         commit('setPokemonList', pokemonList);
         commit('setQuery', query);
+
         return pokemonList;
       } catch (error) {
         console.error("Error during load pokemon:", error);
@@ -305,12 +313,7 @@ export default {
         localStorage.setItem('favouritePokemonIdList', JSON.stringify(dataToSend));    
         await dispatch('loadFavouritePokemonIdList');
 
-        if (window.location.pathname == '/favourite-pokemons') {
-          await dispatch('loadFavouritePokemonList')
-          return;
-        } else {
-          await dispatch('loadPokemonList', state.query)
-        }
+        await commit('toggleFavouritePokemon', pokemonId)
     },
 
     async sharePage({ commit, dispatch, getters, state }: ActionContext<any, any>, payload: { pokemonId: string }) {
@@ -333,16 +336,31 @@ export default {
 
   mutations: {
     setPokemonList(state: { pokemonList: any; quantity: any; }, pokemonList: any) {
-      state.pokemonList = pokemonList;
+      state.pokemonList = [...pokemonList];
     },
 
     // add all pokemon id to state
     setFavouritePokemonIdList(state: { favouritePokemonIdList: any; }, pokemonIdList: any) {
-      state.favouritePokemonIdList = pokemonIdList;
+      state.favouritePokemonIdList = [...pokemonIdList];
     },
 
     setQuery(state: { query: Query; }, query: Query) {
       state.query = query
+    },
+
+    toggleFavouritePokemon(state: { favouritePokemonIdList: any; pokemonList: any[]; }, pokemonId: any) {
+      const favouritePokemonIdList = state.favouritePokemonIdList;
+          
+      const pokemonList = state.pokemonList.map((pokemon: any) => {
+        if (favouritePokemonIdList.includes(pokemon.id)) {
+          pokemon.favouritePokemonId = pokemon.id;
+        } else {
+          pokemon.favouritePokemonId = -1;
+        }
+        return pokemon;
+      });
+
+      state.pokemonList = [...pokemonList]
     }
   },
 };

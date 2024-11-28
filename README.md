@@ -10,25 +10,10 @@ npm install
 npm run serve
 ```
 
-### Compiles and minifies for production
-```
-npm run build
-```
-
-### Lints and fixes files
-```
-npm run lint
-```
-
-### Customize configuration
-See [Configuration Reference](https://cli.vuejs.org/config/).
-
-database: firebase
 ui library: vuetify
 typescript OOP
-OOP: pokemon model
-code comment
-vuex state management
+OOP: pokemon model, query
+using vuex for state management
 
 pokemon data -> pokemon api
-favourite pokemon id -> firebase
+favourite pokemon id -> local storage
